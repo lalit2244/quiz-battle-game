@@ -54,16 +54,29 @@ router.get('/result/:sessionId', (req, res) => {
   const player1Score = calculateScore(player1Answers);
   const player2Score = calculateScore(player2Answers);
 
-  // Determine winner
+  // Determine winner - FIXED LOGIC
   let winner;
+  let winReason;
+  
   if (player1Score.correctAnswers > player2Score.correctAnswers) {
     winner = session.player1;
+    winReason = 'more_correct_answers';
   } else if (player2Score.correctAnswers > player1Score.correctAnswers) {
     winner = session.player2;
+    winReason = 'more_correct_answers';
   } else {
-    // Tie on correct answers, check time
-    winner = player1Score.totalTime < player2Score.totalTime ? 
-      session.player1 : session.player2;
+    // Same number of correct answers - person with LOWER time wins
+    if (player1Score.totalTime < player2Score.totalTime) {
+      winner = session.player1;
+      winReason = 'faster_time';
+    } else if (player2Score.totalTime < player1Score.totalTime) {
+      winner = session.player2;
+      winReason = 'faster_time';
+    } else {
+      // Exact tie (very rare)
+      winner = session.player1;
+      winReason = 'tie';
+    }
   }
 
   session.completed = true;
@@ -76,6 +89,7 @@ router.get('/result/:sessionId', (req, res) => {
     player1Score,
     player2Score,
     winner,
+    winReason,
     completedAt: new Date()
   });
 });
@@ -84,6 +98,7 @@ router.get('/result/:sessionId', (req, res) => {
 function calculateScore(answers) {
   let correctAnswers = 0;
   let totalTime = 0;
+  const answerCount = Object.keys(answers).length;
 
   Object.values(answers).forEach(answer => {
     if (answer.isCorrect) correctAnswers++;
@@ -93,7 +108,7 @@ function calculateScore(answers) {
   return {
     correctAnswers,
     totalTime,
-    averageTime: totalTime / Object.keys(answers).length
+    averageTime: answerCount > 0 ? totalTime / answerCount : 0
   };
 }
 

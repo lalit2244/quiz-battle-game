@@ -20,12 +20,12 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
   
   <script type="text/babel">
     const { useState, useEffect } = React;
     const { createRoot } = ReactDOM;
     
+    // API URL - works both locally and when deployed
     const API_URL = window.location.hostname === 'localhost' 
       ? 'http://localhost:3000/api'
       : '/api';
@@ -62,7 +62,7 @@
     );
 
     function QuizGame() {
-      const [gameState, setGameState] = useState('login');
+      const [gameState, setGameState] = useState('login'); // login, waiting, playing, finished
       const [playerName, setPlayerName] = useState('');
       const [playerLevel, setPlayerLevel] = useState(1);
       const [playerId, setPlayerId] = useState(null);
@@ -74,6 +74,7 @@
       const [result, setResult] = useState(null);
       const [opponent, setOpponent] = useState(null);
 
+      // Poll for match
       useEffect(() => {
         if (gameState === 'waiting' && playerId) {
           const interval = setInterval(async () => {
@@ -98,7 +99,10 @@
       }, [gameState, playerId]);
 
       const handleLogin = async () => {
-        if (!playerName.trim()) return;
+        if (!playerName.trim()) {
+          alert('Please enter your name');
+          return;
+        }
 
         try {
           const res = await fetch(`${API_URL}/player/register`, {
@@ -110,6 +114,7 @@
           setPlayerId(data.playerId);
           setGameState('waiting');
           
+          // Start matchmaking
           await fetch(`${API_URL}/match/find`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -117,7 +122,7 @@
           });
         } catch (err) {
           console.error('Error registering:', err);
-          alert('Error connecting to server. Make sure backend is running on port 3000');
+          alert('Error connecting to server. Make sure backend is running!');
         }
       };
 
@@ -142,6 +147,7 @@
             setCurrentQuestion(currentQuestion + 1);
             setTimeStarted(Date.now());
           } else {
+            // Game finished - get results
             const res = await fetch(`${API_URL}/game/result/${sessionId}`);
             const data = await res.json();
             setResult(data);
@@ -165,6 +171,7 @@
         setOpponent(null);
       };
 
+      // LOGIN SCREEN
       if (gameState === 'login') {
         return (
           <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4">
@@ -177,22 +184,27 @@
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Your Name
+                  </label>
                   <input
                     type="text"
                     value={playerName}
                     onChange={(e) => setPlayerName(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                     placeholder="Enter your name"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Your Level</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Your Level
+                  </label>
                   <select
                     value={playerLevel}
                     onChange={(e) => setPlayerLevel(Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
                   >
                     {[1, 2, 3, 4, 5].map(level => (
                       <option key={level} value={level}>Level {level}</option>
@@ -212,6 +224,7 @@
         );
       }
 
+      // WAITING FOR OPPONENT SCREEN
       if (gameState === 'waiting') {
         return (
           <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4">
@@ -223,11 +236,15 @@
                 <div className="w-5 h-5 text-gray-400"><Users /></div>
                 <span className="text-sm text-gray-500">Waiting for match</span>
               </div>
+              <p className="text-xs text-gray-400 mt-4">
+                Tip: Open this page in another browser window to test!
+              </p>
             </div>
           </div>
         );
       }
 
+      // PLAYING QUIZ SCREEN
       if (gameState === 'playing') {
         const question = questions[currentQuestion];
         
@@ -255,14 +272,16 @@
               </div>
 
               <div className="bg-white rounded-2xl shadow-2xl p-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">{question.question}</h2>
+                <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                  {question.question}
+                </h2>
                 
                 <div className="grid gap-4">
                   {question.options.map((option, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleAnswer(question.id, option)}
-                      className="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-purple-600 hover:bg-purple-50 transition-all font-medium"
+                      className="w-full text-left p-4 border-2 border-gray-300 rounded-lg hover:border-purple-600 hover:bg-purple-50 transition-all font-medium text-gray-700"
                     >
                       {option}
                     </button>
@@ -274,8 +293,13 @@
         );
       }
 
+      // RESULTS SCREEN
       if (gameState === 'finished' && result) {
         const isWinner = result.winner === playerId;
+        
+        // Determine which player's stats to show where
+        const myStats = result.player1 === playerId ? result.player1Score : result.player2Score;
+        const opponentStats = result.player1 === playerId ? result.player2Score : result.player1Score;
         
         return (
           <div className="min-h-screen bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center p-4">
@@ -292,18 +316,53 @@
                 <p className="text-gray-600">
                   {isWinner ? 'Congratulations on your victory!' : 'Better luck next time!'}
                 </p>
+                
+                {result.winReason === 'more_correct_answers' && (
+                  <p className="text-sm text-purple-600 mt-2 font-semibold">
+                    Won by answering more questions correctly!
+                  </p>
+                )}
+                {result.winReason === 'faster_time' && (
+                  <p className="text-sm text-purple-600 mt-2 font-semibold">
+                    Won by being faster! (Same correct answers)
+                  </p>
+                )}
+                {result.winReason === 'tie' && (
+                  <p className="text-sm text-purple-600 mt-2 font-semibold">
+                    Perfect tie - both players performed identically!
+                  </p>
+                )}
               </div>
 
               <div className="grid md:grid-cols-2 gap-4 mb-6">
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-purple-800 mb-2">Your Stats</h3>
-                  <p className="text-sm text-gray-600">Correct: {result.player1Score.correctAnswers}/10</p>
-                  <p className="text-sm text-gray-600">Avg Time: {(result.player1Score.totalTime / 10000).toFixed(2)}s</p>
+                <div className={`p-4 rounded-lg ${isWinner ? 'bg-green-50 border-2 border-green-500' : 'bg-purple-50'}`}>
+                  <h3 className={`font-semibold mb-2 ${isWinner ? 'text-green-800' : 'text-purple-800'}`}>
+                    Your Stats {isWinner ? '👑' : ''}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Correct:</span> {myStats.correctAnswers}/10
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Total Time:</span> {(myStats.totalTime / 1000).toFixed(2)}s
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Avg Time:</span> {(myStats.averageTime / 1000).toFixed(2)}s per question
+                  </p>
                 </div>
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-blue-800 mb-2">Opponent Stats</h3>
-                  <p className="text-sm text-gray-600">Correct: {result.player2Score.correctAnswers}/10</p>
-                  <p className="text-sm text-gray-600">Avg Time: {(result.player2Score.totalTime / 10000).toFixed(2)}s</p>
+                
+                <div className={`p-4 rounded-lg ${!isWinner ? 'bg-green-50 border-2 border-green-500' : 'bg-blue-50'}`}>
+                  <h3 className={`font-semibold mb-2 ${!isWinner ? 'text-green-800' : 'text-blue-800'}`}>
+                    {opponent}'s Stats {!isWinner ? '👑' : ''}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Correct:</span> {opponentStats.correctAnswers}/10
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Total Time:</span> {(opponentStats.totalTime / 1000).toFixed(2)}s
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-bold">Avg Time:</span> {(opponentStats.averageTime / 1000).toFixed(2)}s per question
+                  </p>
                 </div>
               </div>
 
@@ -321,6 +380,7 @@
       return null;
     }
 
+    // Render the app
     const root = createRoot(document.getElementById('root'));
     root.render(<QuizGame />);
   </script>
