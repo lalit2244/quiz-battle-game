@@ -3,7 +3,6 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
 const getPlayers = () => global.gameStorage.players;
-const getWaitingQueue = () => global.gameStorage.waitingQueue;
 const getGameSessions = () => global.gameStorage.gameSessions;
 const getMatchRequests = () => global.gameStorage.matchRequests;
 const getQuestionBank = () => global.questionBank;
@@ -24,19 +23,25 @@ router.get('/nearby/:playerId', (req, res) => {
     if (player.id !== currentPlayer.id && 
         player.level === currentPlayer.level &&
         Math.abs(player.score - currentPlayer.score) <= scoreRange) {
+      
+      // Update last active time
+      player.lastActive = new Date();
+      
       nearbyPlayers.push({
         id: player.id,
         name: player.name,
         level: player.level,
         score: player.score,
-        gamesPlayed: player.gamesPlayed
+        gamesPlayed: player.gamesPlayed || 0
       });
     }
   });
 
-  // Sort by score similarity
+  // Sort by score similarity (closest score first)
   nearbyPlayers.sort((a, b) => {
-    return Math.abs(a.score - currentPlayer.score) - Math.abs(b.score - currentPlayer.score);
+    const diffA = Math.abs(a.score - currentPlayer.score);
+    const diffB = Math.abs(b.score - currentPlayer.score);
+    return diffA - diffB;
   });
 
   res.json({ players: nearbyPlayers.slice(0, 10) }); // Return top 10
@@ -67,15 +72,21 @@ router.post('/request', (req, res) => {
   const requests = matchRequests.get(toId);
   
   // Check if request already exists
-  if (!requests.find(r => r.fromId === fromId)) {
-    requests.push({
-      fromId,
-      fromName: fromPlayer.name,
-      fromLevel: fromPlayer.level,
-      fromScore: fromPlayer.score,
-      timestamp: new Date()
-    });
+  const existingRequest = requests.find(r => r.fromId === fromId);
+  if (existingRequest) {
+    return res.json({ success: true, message: 'Request already sent' });
   }
+
+  // Add new request
+  requests.push({
+    fromId,
+    fromName: fromPlayer.name,
+    fromLevel: fromPlayer.level,
+    fromScore: fromPlayer.score,
+    timestamp: new Date()
+  });
+
+  console.log(`Match request: ${fromPlayer.name} → ${toPlayer.name}`);
 
   res.json({ success: true, message: 'Match request sent' });
 });
@@ -128,6 +139,8 @@ router.post('/accept', (req, res) => {
     completed: false
   });
 
+  console.log(`Match accepted: ${player.name} vs ${opponent.name}`);
+
   // Notify both players
   players.get(playerId).matchInfo = {
     matched: true,
@@ -155,11 +168,17 @@ router.post('/accept', (req, res) => {
 router.post('/decline', (req, res) => {
   const { playerId, fromId } = req.body;
   
+  if (!playerId || !fromId) {
+    return res.status(400).json({ error: 'Missing parameters' });
+  }
+
   const matchRequests = getMatchRequests();
   const requests = matchRequests.get(playerId) || [];
   matchRequests.set(playerId, requests.filter(r => r.fromId !== fromId));
 
-  res.json({ success: true });
+  console.log(`Match declined by ${playerId}`);
+
+  res.json({ success: true, message: 'Request declined' });
 });
 
 // Check match status (for accepted matches)
@@ -173,14 +192,14 @@ router.get('/status/:playerId', (req, res) => {
 
   if (player.matchInfo) {
     const info = player.matchInfo;
-    delete player.matchInfo;
+    delete player.matchInfo; // Clear after reading
     return res.json(info);
   }
 
   res.json({ matched: false });
 });
 
-// Helper function
+// Helper function to get random questions
 function getRandomQuestions(level, count) {
   const questionBank = getQuestionBank();
   const levelQuestions = questionBank[level] || questionBank[1];
