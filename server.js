@@ -8,25 +8,23 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory storage - defined first
+// In-memory storage
 const storage = {
   players: new Map(),
   waitingQueue: new Map(),
-  gameSessions: new Map()
+  gameSessions: new Map(),
+  matchRequests: new Map() // fromId -> [toId array]
 };
 
-// Make storage available globally
 global.gameStorage = storage;
 
 // Load question bank
 const questionBank = require('./questions');
 global.questionBank = questionBank;
 
-// Routes - loaded after storage is defined
+// Routes
 const playerRoutes = require('./routes/player');
 const matchRoutes = require('./routes/match');
 const gameRoutes = require('./routes/game');
@@ -51,7 +49,12 @@ app.listen(PORT, () => {
   console.log(`🎮 Frontend available at http://localhost:${PORT}`);
   console.log(`📝 API endpoints:`);
   console.log(`   - POST /api/player/register`);
-  console.log(`   - POST /api/match/find`);
+  console.log(`   - GET  /api/player/:playerId`);
+  console.log(`   - GET  /api/match/nearby/:playerId`);
+  console.log(`   - POST /api/match/request`);
+  console.log(`   - POST /api/match/accept`);
+  console.log(`   - POST /api/match/decline`);
+  console.log(`   - GET  /api/match/requests/:playerId`);
   console.log(`   - GET  /api/match/status/:playerId`);
   console.log(`   - POST /api/game/answer`);
   console.log(`   - GET  /api/game/result/:sessionId`);
