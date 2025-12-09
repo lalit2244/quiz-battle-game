@@ -17,14 +17,13 @@ router.get('/nearby/:playerId', (req, res) => {
   }
 
   const nearbyPlayers = [];
-  const scoreRange = 200; // Players within ±200 score points
+  const scoreRange = 200;
   
   players.forEach((player) => {
     if (player.id !== currentPlayer.id && 
         player.level === currentPlayer.level &&
         Math.abs(player.score - currentPlayer.score) <= scoreRange) {
       
-      // Update last active time
       player.lastActive = new Date();
       
       nearbyPlayers.push({
@@ -37,14 +36,13 @@ router.get('/nearby/:playerId', (req, res) => {
     }
   });
 
-  // Sort by score similarity (closest score first)
   nearbyPlayers.sort((a, b) => {
     const diffA = Math.abs(a.score - currentPlayer.score);
     const diffB = Math.abs(b.score - currentPlayer.score);
     return diffA - diffB;
   });
 
-  res.json({ players: nearbyPlayers.slice(0, 10) }); // Return top 10
+  res.json({ players: nearbyPlayers.slice(0, 10) });
 });
 
 // Send match request
@@ -71,13 +69,11 @@ router.post('/request', (req, res) => {
 
   const requests = matchRequests.get(toId);
   
-  // Check if request already exists
   const existingRequest = requests.find(r => r.fromId === fromId);
   if (existingRequest) {
     return res.json({ success: true, message: 'Request already sent' });
   }
 
-  // Add new request
   requests.push({
     fromId,
     fromName: fromPlayer.name,
@@ -86,7 +82,7 @@ router.post('/request', (req, res) => {
     timestamp: new Date()
   });
 
-  console.log(`Match request: ${fromPlayer.name} → ${toPlayer.name}`);
+  console.log(`✉️ Match request: ${fromPlayer.name} → ${toPlayer.name}`);
 
   res.json({ success: true, message: 'Match request sent' });
 });
@@ -139,9 +135,10 @@ router.post('/accept', (req, res) => {
     completed: false
   });
 
-  console.log(`Match accepted: ${player.name} vs ${opponent.name}`);
+  console.log(`🎮 Match accepted: ${player.name} vs ${opponent.name}`);
 
-  // Notify both players
+  // IMPORTANT: Notify BOTH players with matchInfo
+  // The person who accepted (playerId)
   players.get(playerId).matchInfo = {
     matched: true,
     sessionId,
@@ -149,6 +146,7 @@ router.post('/accept', (req, res) => {
     questions
   };
   
+  // The person who sent request (fromId) - THIS WAS MISSING PROPER STATE
   players.get(fromId).matchInfo = {
     matched: true,
     sessionId,
@@ -176,7 +174,7 @@ router.post('/decline', (req, res) => {
   const requests = matchRequests.get(playerId) || [];
   matchRequests.set(playerId, requests.filter(r => r.fromId !== fromId));
 
-  console.log(`Match declined by ${playerId}`);
+  console.log(`❌ Match declined by ${playerId}`);
 
   res.json({ success: true, message: 'Request declined' });
 });
@@ -193,13 +191,13 @@ router.get('/status/:playerId', (req, res) => {
   if (player.matchInfo) {
     const info = player.matchInfo;
     delete player.matchInfo; // Clear after reading
+    console.log(`📢 Sending match info to ${player.name}`);
     return res.json(info);
   }
 
   res.json({ matched: false });
 });
 
-// Helper function to get random questions
 function getRandomQuestions(level, count) {
   const questionBank = getQuestionBank();
   const levelQuestions = questionBank[level] || questionBank[1];
