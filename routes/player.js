@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
-// Access global storage
 const getPlayers = () => global.gameStorage.players;
 
 // Register a new player
@@ -20,10 +19,19 @@ router.post('/register', (req, res) => {
     id: playerId,
     name,
     level,
-    createdAt: new Date()
+    score: 0, // Starting score
+    gamesPlayed: 0,
+    gamesWon: 0,
+    createdAt: new Date(),
+    lastActive: new Date()
   });
 
-  res.json({ playerId, name, level });
+  res.json({ 
+    playerId, 
+    name, 
+    level,
+    score: 0 
+  });
 });
 
 // Get player info
@@ -34,6 +42,9 @@ router.get('/:playerId', (req, res) => {
   if (!player) {
     return res.status(404).json({ error: 'Player not found' });
   }
+
+  // Update last active
+  player.lastActive = new Date();
 
   res.json(player);
 });
