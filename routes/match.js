@@ -2,88 +2,167 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
-// Access global storage
 const getPlayers = () => global.gameStorage.players;
 const getWaitingQueue = () => global.gameStorage.waitingQueue;
 const getGameSessions = () => global.gameStorage.gameSessions;
+const getMatchRequests = () => global.gameStorage.matchRequests;
 const getQuestionBank = () => global.questionBank;
 
-// Find a match for a player
-router.post('/find', (req, res) => {
-  const { playerId, level } = req.body;
+// Get nearby players (within score range)
+router.get('/nearby/:playerId', (req, res) => {
+  const players = getPlayers();
+  const currentPlayer = players.get(req.params.playerId);
   
-  if (!playerId || !level) {
-    return res.status(400).json({ error: 'PlayerId and level are required' });
+  if (!currentPlayer) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const nearbyPlayers = [];
+  const scoreRange = 200; // Players within ±200 score points
+  
+  players.forEach((player) => {
+    if (player.id !== currentPlayer.id && 
+        player.level === currentPlayer.level &&
+        Math.abs(player.score - currentPlayer.score) <= scoreRange) {
+      nearbyPlayers.push({
+        id: player.id,
+        name: player.name,
+        level: player.level,
+        score: player.score,
+        gamesPlayed: player.gamesPlayed
+      });
+    }
+  });
+
+  // Sort by score similarity
+  nearbyPlayers.sort((a, b) => {
+    return Math.abs(a.score - currentPlayer.score) - Math.abs(b.score - currentPlayer.score);
+  });
+
+  res.json({ players: nearbyPlayers.slice(0, 10) }); // Return top 10
+});
+
+// Send match request
+router.post('/request', (req, res) => {
+  const { fromId, toId } = req.body;
+  
+  if (!fromId || !toId) {
+    return res.status(400).json({ error: 'fromId and toId are required' });
+  }
+
+  const players = getPlayers();
+  const fromPlayer = players.get(fromId);
+  const toPlayer = players.get(toId);
+  
+  if (!fromPlayer || !toPlayer) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const matchRequests = getMatchRequests();
+  
+  if (!matchRequests.has(toId)) {
+    matchRequests.set(toId, []);
+  }
+
+  const requests = matchRequests.get(toId);
+  
+  // Check if request already exists
+  if (!requests.find(r => r.fromId === fromId)) {
+    requests.push({
+      fromId,
+      fromName: fromPlayer.name,
+      fromLevel: fromPlayer.level,
+      fromScore: fromPlayer.score,
+      timestamp: new Date()
+    });
+  }
+
+  res.json({ success: true, message: 'Match request sent' });
+});
+
+// Get pending requests for a player
+router.get('/requests/:playerId', (req, res) => {
+  const matchRequests = getMatchRequests();
+  const requests = matchRequests.get(req.params.playerId) || [];
+  
+  res.json({ requests });
+});
+
+// Accept match request
+router.post('/accept', (req, res) => {
+  const { playerId, fromId } = req.body;
+  
+  if (!playerId || !fromId) {
+    return res.status(400).json({ error: 'playerId and fromId are required' });
   }
 
   const players = getPlayers();
   const player = players.get(playerId);
+  const opponent = players.get(fromId);
   
-  if (!player) {
+  if (!player || !opponent) {
     return res.status(404).json({ error: 'Player not found' });
   }
 
-  const waitingQueue = getWaitingQueue();
+  // Remove the request
+  const matchRequests = getMatchRequests();
+  const requests = matchRequests.get(playerId) || [];
+  matchRequests.set(playerId, requests.filter(r => r.fromId !== fromId));
+
+  // Create game session
+  const sessionId = uuidv4();
+  const questions = getRandomQuestions(player.level, 10);
   
-  // Check if there's already a player waiting at this level
-  if (!waitingQueue.has(level)) {
-    waitingQueue.set(level, []);
-  }
+  const gameSessions = getGameSessions();
+  gameSessions.set(sessionId, {
+    id: sessionId,
+    player1: playerId,
+    player2: fromId,
+    level: player.level,
+    questions,
+    answers: {
+      [playerId]: {},
+      [fromId]: {}
+    },
+    startedAt: new Date(),
+    completed: false
+  });
 
-  const queue = waitingQueue.get(level);
+  // Notify both players
+  players.get(playerId).matchInfo = {
+    matched: true,
+    sessionId,
+    opponent: opponent.name,
+    questions
+  };
   
-  if (queue.length > 0) {
-    // Match found! Create game session
-    const opponentId = queue.shift();
-    const opponent = players.get(opponentId);
-    
-    const sessionId = uuidv4();
-    const questions = getRandomQuestions(level, 10);
-    
-    const gameSessions = getGameSessions();
-    gameSessions.set(sessionId, {
-      id: sessionId,
-      player1: playerId,
-      player2: opponentId,
-      level,
-      questions,
-      answers: {
-        [playerId]: {},
-        [opponentId]: {}
-      },
-      startedAt: new Date(),
-      completed: false
-    });
+  players.get(fromId).matchInfo = {
+    matched: true,
+    sessionId,
+    opponent: player.name,
+    questions
+  };
 
-    // Store match info temporarily for both players
-    players.get(playerId).matchInfo = {
-      matched: true,
-      sessionId,
-      opponent: opponent.name,
-      questions
-    };
-    
-    players.get(opponentId).matchInfo = {
-      matched: true,
-      sessionId,
-      opponent: player.name,
-      questions
-    };
-
-    res.json({ 
-      matched: true, 
-      sessionId, 
-      opponent: opponent.name,
-      questions 
-    });
-  } else {
-    // No match yet, add to queue
-    queue.push(playerId);
-    res.json({ matched: false, message: 'Waiting for opponent' });
-  }
+  res.json({ 
+    success: true,
+    sessionId,
+    opponent: opponent.name,
+    questions 
+  });
 });
 
-// Check match status
+// Decline match request
+router.post('/decline', (req, res) => {
+  const { playerId, fromId } = req.body;
+  
+  const matchRequests = getMatchRequests();
+  const requests = matchRequests.get(playerId) || [];
+  matchRequests.set(playerId, requests.filter(r => r.fromId !== fromId));
+
+  res.json({ success: true });
+});
+
+// Check match status (for accepted matches)
 router.get('/status/:playerId', (req, res) => {
   const players = getPlayers();
   const player = players.get(req.params.playerId);
@@ -94,14 +173,14 @@ router.get('/status/:playerId', (req, res) => {
 
   if (player.matchInfo) {
     const info = player.matchInfo;
-    delete player.matchInfo; // Clear after reading
+    delete player.matchInfo;
     return res.json(info);
   }
 
   res.json({ matched: false });
 });
 
-// Helper function to get random questions
+// Helper function
 function getRandomQuestions(level, count) {
   const questionBank = getQuestionBank();
   const levelQuestions = questionBank[level] || questionBank[1];
