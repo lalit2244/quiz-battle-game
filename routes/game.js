@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 
-// Access global storage
 const getGameSessions = () => global.gameStorage.gameSessions;
+const getPlayers = () => global.gameStorage.players;
 
 // Submit an answer
 router.post('/answer', (req, res) => {
@@ -19,11 +19,9 @@ router.post('/answer', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  // Find the correct answer
   const question = session.questions.find(q => q.id === questionId);
   const isCorrect = question && question.correctAnswer === answer;
 
-  // Store the answer
   session.answers[playerId][questionId] = {
     answer,
     isCorrect,
@@ -47,14 +45,13 @@ router.get('/result/:sessionId', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  // Calculate scores
   const player1Answers = session.answers[session.player1];
   const player2Answers = session.answers[session.player2];
 
   const player1Score = calculateScore(player1Answers);
   const player2Score = calculateScore(player2Answers);
 
-  // Determine winner - FIXED LOGIC
+  // Determine winner
   let winner;
   let winReason;
   
@@ -65,7 +62,6 @@ router.get('/result/:sessionId', (req, res) => {
     winner = session.player2;
     winReason = 'more_correct_answers';
   } else {
-    // Same number of correct answers - person with LOWER time wins
     if (player1Score.totalTime < player2Score.totalTime) {
       winner = session.player1;
       winReason = 'faster_time';
@@ -73,7 +69,6 @@ router.get('/result/:sessionId', (req, res) => {
       winner = session.player2;
       winReason = 'faster_time';
     } else {
-      // Exact tie (very rare)
       winner = session.player1;
       winReason = 'tie';
     }
@@ -81,6 +76,31 @@ router.get('/result/:sessionId', (req, res) => {
 
   session.completed = true;
   session.winner = winner;
+
+  // Update player statistics
+  const players = getPlayers();
+  const player1 = players.get(session.player1);
+  const player2 = players.get(session.player2);
+
+  if (player1) {
+    player1.gamesPlayed = (player1.gamesPlayed || 0) + 1;
+    if (winner === session.player1) {
+      player1.gamesWon = (player1.gamesWon || 0) + 1;
+      player1.score = (player1.score || 0) + 100; // Winner gets 100 points
+    } else {
+      player1.score = (player1.score || 0) + 10; // Loser gets 10 points for participation
+    }
+  }
+
+  if (player2) {
+    player2.gamesPlayed = (player2.gamesPlayed || 0) + 1;
+    if (winner === session.player2) {
+      player2.gamesWon = (player2.gamesWon || 0) + 1;
+      player2.score = (player2.score || 0) + 100;
+    } else {
+      player2.score = (player2.score || 0) + 10;
+    }
+  }
 
   res.json({
     sessionId: session.id,
@@ -94,7 +114,6 @@ router.get('/result/:sessionId', (req, res) => {
   });
 });
 
-// Helper function to calculate score
 function calculateScore(answers) {
   let correctAnswers = 0;
   let totalTime = 0;
